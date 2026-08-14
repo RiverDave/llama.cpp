@@ -1,6 +1,11 @@
 # champion-speedup mission
 
-Goal: make the champion (Qwen3.6-35B-A3B UD-IQ3_S, M4 Mini 24GB, llama.cpp) faster on real LLVM/agentic work. Target: 20-30% wall-time on a realistic agent-loop proxy. Hard stop ~5h. Verdict report at the end.
+Goal: make the champion (Qwen3.6-35B-A3B UD-IQ3_S, M4 Mini 24GB, llama.cpp) faster on GENERAL-PURPOSE, genuinely hard coding tasks (user clarification 2026-08-14: not LLVM-specific — long context reads, reasoning turns, multi-file edits, verification loops). Target: 20-30% wall-time on a realistic agent-loop proxy. Hard stop ~5h. Verdict report at the end.
+
+Proxy design (hard-task session through pi + champion, thinking adaptive: ON for reasoning turns, OFF for tool/mechanical turns):
+- 2-3 fixed tasks from a hard-task set (algorithm implementation with tests, bug fix with repro, constrained refactor), each with a deterministic verify gate
+- Metrics per task: wall time, tokens in/out, decode tok/s, TTFT, KV-reuse hits (server log)
+- Baseline = current server config under clean memory; every candidate change re-runs the same set
 
 ## Baseline (all measured Aug 9-11, clean memory)
 
