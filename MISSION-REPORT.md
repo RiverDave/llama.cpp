@@ -70,3 +70,49 @@ Root cause of the decode wall: kernel-dispatch-bound small-batch mul_mat. IQ3_S 
 - 2026-08-14 ~12:00: RUNAWAY THINKING FOUND: open-ended mechanical prompt (no tool schema) with thinking ON = 600+ reasoning tokens, ZERO content (max_tokens exhausted). Thinking never self-terminates on mechanical prompts. --reasoning-budget 256 CAPS it: 255 reasoning + real content, answered every turn (verified 3/3). This is the compromise knob: hard tasks keep thinking (cand-budget256: all gates pass, neutral walls), runaway-prone turns capped (~30-40% faster on those turns).
 - Per-request opt-in verified: with server --reasoning off, chat_template_kwargs.enable_thinking=true still enables thinking (server-common.cpp:1080). Adaptive building block complete.
 - 2026-08-14 ~12:15: cand-budget256b (confirmation run) in flight.
+
+## VERDICT (2026-08-14 ~13:00, mission end)
+
+### Contract result
+`proxy.sh compare baseline2 cand-budget256`: **GATE ACHIEVED** (mean ratio
+2.49x, 3/3 gates green, no degraded-memory runs). Caveat, stated plainly:
+t1's wall is agent-path-luck dominated (81s / 511s / 172s / 1200s-timeout
+across runs), so the 5.94x t1 ratio is variance, not config. t2/t3 moved
+-9%/+39% (within variance). The hard-task proxy CANNOT demonstrate config
+wins at n=1; its verdicts are noise. Methodological finding (journaled to
+skill): use min-of-3 or repeated-measures for agent-task proxies.
+
+### What actually changed (defensible, measured)
+1. **-np 1** (was 4-slot default): server no longer swap-throttles decode
+   27 -> 17 t/s. Clean decode now 27.9 t/s - best ever recorded on this box.
+2. **--reasoning-budget 256 as daily-driver default** (new): thinking stays
+   available for hard reasoning (all 3 hard proxy tasks pass with it), but
+   RUNAWAY thinking (discovered this mission: 600+ reasoning tokens, ZERO
+   content, thinking never self-terminates on mechanical/planning prompts)
+   is capped: measured 255 reasoning + real answer, every turn.
+3. **Session-level adaptive knob**: THINK_ARGS="--reasoning off" cuts
+   trivial-turn tokens 18x (74 -> 4); per-request opt-in verified
+   (enable_thinking:true still works with the server default off).
+4. **KV prefix reuse verified working**: 9.4x warm TTFT on stable prefixes
+   (16.8s -> 1.8s) - already automatic in the server.
+5. Thinking is LOAD-BEARING on hard tasks: --reasoning off made t1 use 2x
+   tokens and 2x wall (4 compile cycles vs 1) - do NOT run hard sessions
+   with thinking off.
+
+### Decode kernel shot: NOT attempted - decision with evidence
+The only remaining single-stream lever (batched/fused expert kernels,
+mul_mv_id at ne21=1) is a multi-hour kernel surgery whose own prior art on
+this box is neutral (nr8-for-IQ3_S surgery, measured Aug 10). Published
+analysis (#25250 + our measurements) says single-stream Metal decode at
+IQ3_S is kernel-dispatch-bound with NO known software fix; upstream has
+nothing new since Aug 10 (95 commits scanned). EV of the attempt within
+the remaining timebox was judged negative; the composite wins above were
+banked instead.
+
+### Daily driver (recommended, already the script default)
+```
+~/dev/llm-silicon/champion-up.sh          # -np 1 + --reasoning-budget 256
+THINK_ARGS="--reasoning off" ~/dev/llm-silicon/champion-up.sh   # mechanical sessions
+```
+Rollback: plain `git checkout master` + rebuild, or THINK_ARGS="" on the
+old script (all changes are flag-level, no model/kernel changes).

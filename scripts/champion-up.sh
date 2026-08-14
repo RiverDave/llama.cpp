@@ -17,10 +17,15 @@
 # decode 27 -> 17 t/s, prefill 308 -> 145 t/s. One slot is all Hermes/pi
 # uses. See local-llm-benchmarking skill: server-throughput-swap-vs-overhead.
 #
-# EXPERIMENT KNOB (2026-08-14): THINK_ARGS adds server-side reasoning
-# control, e.g. THINK_ARGS="--reasoning-budget 256" or
-# THINK_ARGS="--reasoning off". Default (empty) = template default
-# (thinking on, unlimited).
+# EXPERIMENT KNOB (2026-08-14): THINK_ARGS overrides the reasoning control.
+# DEFAULT (mission outcome): --reasoning-budget 256 - thinking preserved for
+# hard reasoning turns (proxy gates prove quality: all 3 hard tasks pass),
+# runaway thinking on mechanical/planning turns capped at 256 tokens
+# (measured: 600+ token runaways with ZERO content -> 255 reasoning + real
+# answer). Overrides: THINK_ARGS="--reasoning off" for pure mechanical
+# sessions (18x token reduction on trivial turns), THINK_ARGS="--reasoning
+# on" for unlimited thinking. Per-request opt-in still works: clients
+# sending chat_template_kwargs.enable_thinking=true get thinking regardless.
 
 set -euo pipefail
 
@@ -48,8 +53,8 @@ fi
 
 echo "Starting champion server (ctx=$CTX, port=$PORT)..."
 echo "  model: $MODEL"
-echo "  think args: ${THINK_ARGS:-<default: template (thinking on, unlimited)>}"
-nohup "$BIN" -m "$MODEL" -c "$CTX" -t 8 -fa on --jinja -np 1 ${THINK_ARGS:-} --port "$PORT" --host 127.0.0.1 > "$LOG" 2>&1 &
+echo "  think args: ${THINK_ARGS:---reasoning-budget 256 (mission default; overridable via THINK_ARGS)}"
+nohup "$BIN" -m "$MODEL" -c "$CTX" -t 8 -fa on --jinja -np 1 ${THINK_ARGS:---reasoning-budget 256} --port "$PORT" --host 127.0.0.1 > "$LOG" 2>&1 &
 SERVER_PID=$!
 
 # Wait for health (up to 60s)
