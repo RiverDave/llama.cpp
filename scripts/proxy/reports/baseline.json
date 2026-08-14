@@ -1,0 +1,13 @@
+{
+  "label": "baseline",
+  "date": "2026-08-14T10:13:29",
+  "memory_before": {
+    "swap_mb": 9547,
+    "free_pct": 6
+  },
+  "memory_after": {
+    "swap_mb": 9547,
+    "free_pct": 6
+  },
+  "tasks": {}
+}

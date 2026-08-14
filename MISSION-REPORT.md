@@ -55,3 +55,10 @@ Root cause of the decode wall: kernel-dispatch-bound small-batch mul_mat. IQ3_S 
 ## Progress log
 
 - 2026-08-14 09:00: mission scaffold. Branch created from master 62bf73d (matches all prior measured data). Rebuild from clean master started -- build/bin was stale (Aug 10 19:15, possibly fork-surgery binary). Machine state: 17.4GB swap in use (legacy pressure), server DOWN.
+- 2026-08-14 ~10:00: proxy gate infrastructure built + validated (commit 81f7de39c, corrective 734b08e25). 3 hard tasks, all RED-on-starting-code / GREEN-on-reference. proxy.sh runner with independent gate verification + clean-memory contract; agentload_probe.py (agent-loop simulation).
+- 2026-08-14 ~10:15: BASELINE (clean memory, server -np 1 @131K, master 62bf73d):
+  - speed_probe (700-token gen, thinking off): decode 27.8 / 28.0 t/s (avg 27.9) -- best clean server number ever recorded (old: 27.1)
+  - TTFT cold 0.67s, warm 0.18s
+  - agentload probe (5K-token stable prefix, 6 turns): cold TTFT 16.8s -> warm 1.81-1.91s (9.4x KV prefix reuse working); per-turn warm total 6.2-6.4s (120 tok @ ~27 t/s); decode stable 26.8-27.3 t/s
+  - /slots field for cache hits: n_prompt_tokens_cache (not cached_tokens) in this build
+  - proxy baseline run launched (3 hard tasks through pi, thinking high, 20 min timebox each)

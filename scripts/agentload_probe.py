@@ -70,7 +70,8 @@ def slot_cached():
     try:
         with urllib.request.urlopen(f"{BASE}/slots", timeout=5) as r:
             slots = json.load(r)
-        return sum(s.get("cached_tokens", 0) for s in slots)
+        return sum(s.get("n_prompt_tokens_cache", s.get("cached_tokens", 0))
+                   for s in slots)
     except Exception:
         return -1
 
