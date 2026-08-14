@@ -17,6 +17,10 @@ import urllib.request
 PORT = sys.argv[1] if len(sys.argv) > 1 else "12346"
 TURNS = int(sys.argv[2]) if len(sys.argv) > 2 else 6
 BLOCKS = int(sys.argv[3]) if len(sys.argv) > 3 else 60
+# default: send enable_thinking:false (mechanical-turn profile).
+# pass "server-default" as arg 4 to omit the kwarg and use the server's
+# --reasoning default (to measure the thinking tax on mechanical turns).
+USE_SERVER_DEFAULT = len(sys.argv) > 4 and sys.argv[4] == "server-default"
 
 BASE = f"http://127.0.0.1:{PORT}"
 
@@ -40,8 +44,9 @@ def chat(tail: str):
         "temperature": 0.3,
         "max_tokens": 120,
         "stream": True,
-        "chat_template_kwargs": {"enable_thinking": False},
     }
+    if not USE_SERVER_DEFAULT:
+        body["chat_template_kwargs"] = {"enable_thinking": False}
     req = urllib.request.Request(
         f"{BASE}/v1/chat/completions", data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"})

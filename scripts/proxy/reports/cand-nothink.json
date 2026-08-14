@@ -1,0 +1,32 @@
+{
+  "label": "cand-nothink",
+  "date": "2026-08-14T10:49:49",
+  "memory_before": {
+    "swap_mb": 9268,
+    "free_pct": 12
+  },
+  "memory_after": {
+    "swap_mb": 9648,
+    "free_pct": 7
+  },
+  "tasks": {
+    "t1": {
+      "gate": true,
+      "wall_s": 172.0,
+      "pi_exit": 0,
+      "timed_out": false
+    },
+    "t2": {
+      "gate": true,
+      "wall_s": 50.8,
+      "pi_exit": 0,
+      "timed_out": false
+    },
+    "t3": {
+      "gate": true,
+      "wall_s": 121.4,
+      "pi_exit": 0,
+      "timed_out": false
+    }
+  }
+}
