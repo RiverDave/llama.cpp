@@ -16,6 +16,11 @@
 # (4 x 131K slots ~= 16GB KV + 15.35GB model on a 24GB box) -> deep swap,
 # decode 27 -> 17 t/s, prefill 308 -> 145 t/s. One slot is all Hermes/pi
 # uses. See local-llm-benchmarking skill: server-throughput-swap-vs-overhead.
+#
+# EXPERIMENT KNOB (2026-08-14): THINK_ARGS adds server-side reasoning
+# control, e.g. THINK_ARGS="--reasoning-budget 256" or
+# THINK_ARGS="--reasoning off". Default (empty) = template default
+# (thinking on, unlimited).
 
 set -euo pipefail
 
@@ -43,7 +48,8 @@ fi
 
 echo "Starting champion server (ctx=$CTX, port=$PORT)..."
 echo "  model: $MODEL"
-nohup "$BIN" -m "$MODEL" -c "$CTX" -t 8 -fa on --jinja -np 1 --port "$PORT" --host 127.0.0.1 > "$LOG" 2>&1 &
+echo "  think args: ${THINK_ARGS:-<default: template (thinking on, unlimited)>}"
+nohup "$BIN" -m "$MODEL" -c "$CTX" -t 8 -fa on --jinja -np 1 ${THINK_ARGS:-} --port "$PORT" --host 127.0.0.1 > "$LOG" 2>&1 &
 SERVER_PID=$!
 
 # Wait for health (up to 60s)
