@@ -1,28 +1,25 @@
 #!/bin/bash
 # sol-review.sh - overnight Sol review pass for the metal-moe-kernel branch.
 # Reviews the diff since the last review with gpt-5.6-sol (via codex review,
-# riding the ChatGPT Plus subscription), writes REVIEWS/<date>.md (committed
-# to the branch so the fork shows the audit trail), prints a compact digest.
+# riding the ChatGPT Plus subscription).
+#
+# v3 (from Sol's P1 findings on v2, 2026-08-14):
+# - marker lives in .git/ (never committed -> no self-review loop)
+# - reviews written OUTSIDE the worktree (~/dev/llm-silicon/reviews/) ->
+#   codex never reviews its own output; no auto-commits (AGENTS.md:49)
 #
 # Usage: scripts/sol-review.sh [base-branch]   (default: champion-speedup)
-#
 # Cron: no_agent watchdog - stdout delivered verbatim; silent when no new
 # commits; non-zero exit on review failure (cron alerts).
-#
-# v2 fixes (from Sol's own review of v1, REVIEWS/2026-08-14.md):
-# - review --base <marker> so each run covers ONLY new commits
-# - marker advances only on codex success; failures exit nonzero
-# - git log -25 (no SIGPIPE via head)
-# - missing base ref = error, not silent success
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 BASE="${1:-champion-speedup}"
-REVIEWS_DIR="$ROOT/REVIEWS"
-MARKER="$REVIEWS_DIR/.last-reviewed"
-mkdir -p "$REVIEWS_DIR"
+MARKER="$ROOT/.git/sol-review-marker"
+OUT_DIR="$HOME/dev/llm-silicon/reviews"
+mkdir -p "$OUT_DIR"
 
 # Resolve the base ref; a missing base is a config error, not "no work".
 if git rev-parse --verify --quiet "$BASE" >/dev/null; then
@@ -44,7 +41,7 @@ if [ "$NCOMMITS" = "0" ]; then
     exit 0
 fi
 
-OUT="$REVIEWS_DIR/$(date +%Y-%m-%d).md"
+OUT="$OUT_DIR/$(date +%Y-%m-%d).md"
 {
     echo "# Sol review $(date "+%Y-%m-%d %H:%M")"
     echo
@@ -86,12 +83,10 @@ fi
 
 echo "$(git rev-parse HEAD)" > "$MARKER"
 
-git add REVIEWS/ >/dev/null 2>&1 && git commit -m "review: Sol pass $(date +%Y-%m-%d)" >/dev/null 2>&1 || true
-
 # Digest for delivery
 echo "SOL-REVIEW $(date +%Y-%m-%d): $NCOMMITS commits reviewed ($(git rev-parse --short "$LAST")..$(git rev-parse --short HEAD))"
-echo "Full review: REVIEWS/$(basename "$OUT") (committed to branch)"
+echo "Full review: $OUT"
 echo "---"
-grep -nE "Critical|critical|Warning|warning|Bug|bug|flaw|FAIL|incorrect|race|out.of.bounds" "$OUT" | head -15 || true
+grep -nE "\[P[0-9]\]|Critical|critical|Warning|warning|flaw|incorrect|race|out.of.bounds" "$OUT" | head -15 || true
 echo "---"
 tail -30 "$OUT"
