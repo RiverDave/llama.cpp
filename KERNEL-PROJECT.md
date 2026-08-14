@@ -90,8 +90,10 @@ across 8 tokens instead of 1 (PR #25377 evidence on plain mul_mat:
    - careful with lr0/lr1 clamping + id lookup (ids_i32[im*ne21 + r1 + lr1])
 2. Instantiate for block_iq3_s (QK_NL, dequantize_iq3_s) + block_q4_0 +
    block_q8_0 (validation quants). Register host_name in the template
-   block; wire pipeline lookup in ggml-metal.m (mirror
-   ggml_metal_library_get_pipeline_mul_mm_id).
+   block; wire pipeline lookup in ggml-metal-device.cpp (mirror
+   ggml_metal_library_get_pipeline_mul_mm_id at ggml-metal-device.cpp:1009
+   - corrected 2026-08-14 per Sol review; the .metal file is the shader
+   source, the registry lives in ggml-metal-device.cpp).
 3. Dispatch (ggml-metal-ops.cpp MUL_MAT_ID case): new branch
    (ne21 >= 2 && ne21 <= 16 && quant in {iq3_s, q4_0, q8_0}) ->
    nr8 pipeline; keep mv at ne21==1; keep existing mm at ne21>=32.

@@ -6,10 +6,14 @@
 #
 # Usage: scripts/sol-review.sh [base-branch]   (default: champion-speedup)
 #
-# Cron: no_agent watchdog - stdout is delivered verbatim; keep the digest
-# short (empty-ish output on no-new-commits would be ideal but a nightly
-# review of even 1 commit is the point - this is a review loop, not a
-# change-detector).
+# Cron: no_agent watchdog - stdout delivered verbatim; silent when no new
+# commits; non-zero exit on review failure (cron alerts).
+#
+# v2 fixes (from Sol's own review of v1, REVIEWS/2026-08-14.md):
+# - review --base <marker> so each run covers ONLY new commits
+# - marker advances only on codex success; failures exit nonzero
+# - git log -25 (no SIGPIPE via head)
+# - missing base ref = error, not silent success
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,13 +24,17 @@ REVIEWS_DIR="$ROOT/REVIEWS"
 MARKER="$REVIEWS_DIR/.last-reviewed"
 mkdir -p "$REVIEWS_DIR"
 
-# Locate the base ref (local branch or remote)
-if git rev-parse --verify "$BASE" >/dev/null 2>&1; then
+# Resolve the base ref; a missing base is a config error, not "no work".
+if git rev-parse --verify --quiet "$BASE" >/dev/null; then
     BASE_REF="$BASE"
-else
+elif git rev-parse --verify --quiet "origin/$BASE" >/dev/null; then
     BASE_REF="origin/$BASE"
+else
+    echo "sol-review: base '$BASE' not found locally or on origin" >&2
+    exit 2
 fi
 
+# The ref to diff against: the last-reviewed marker, else the base branch.
 LAST="$(cat "$MARKER" 2>/dev/null || echo "$BASE_REF")"
 
 # Number of new commits since last review
@@ -44,7 +52,7 @@ OUT="$REVIEWS_DIR/$(date +%Y-%m-%d).md"
     echo "- Model: gpt-5.6-sol (codex review, ChatGPT plan)"
     echo
     echo '```'
-    git log --oneline "$LAST..HEAD" | head -25
+    git log --oneline -25 "$LAST..HEAD"
     echo '```'
     echo
     echo "## Findings"
@@ -55,15 +63,25 @@ REVIEW_PROMPT="Adversarial code review of the Metal MoE kernel changes (metal-mo
 
 # codex 0.146: --base cannot be combined with a positional [PROMPT]; the
 # stdin form ('-') is the workaround. Fall back to the built-in prompt.
-if ! codex review --base "$BASE_REF" \
+REVIEW_OK=0
+if codex review --base "$LAST" \
         -c model="gpt-5.6-sol" \
         -c model_reasoning_effort="high" \
         - <<< "$REVIEW_PROMPT" >> "$OUT" 2>&1; then
+    REVIEW_OK=1
+else
     echo "(stdin prompt form rejected - retrying with built-in review prompt)" >> "$OUT"
-    codex review --base "$BASE_REF" \
-        -c model="gpt-5.6-sol" \
-        -c model_reasoning_effort="high" \
-        >> "$OUT" 2>&1 || echo "(codex review failed)" >> "$OUT"
+    if codex review --base "$LAST" \
+            -c model="gpt-5.6-sol" \
+            -c model_reasoning_effort="high" \
+            >> "$OUT" 2>&1; then
+        REVIEW_OK=1
+    fi
+fi
+
+if [ "$REVIEW_OK" != "1" ]; then
+    echo "sol-review FAILED (codex review error) - marker NOT advanced; see $OUT" >&2
+    exit 1
 fi
 
 echo "$(git rev-parse HEAD)" > "$MARKER"
