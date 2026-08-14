@@ -45,6 +45,19 @@ memory_snapshot() {
     echo "{\"swap_mb\": ${swap_mb:-0}, \"free_pct\": ${free_pct:-0}}"
 }
 
+# Degradation rule: with the champion loaded, free% sits at 6-11% NORMALLY
+# (15GB wired). The real degraded signal is swap GROWING during the run
+# (>2GB) or free% in hard-OOM territory (<3).
+degraded() {
+    python3 - "$1" "$2" <<'PY'
+import json, sys
+before = json.loads(sys.argv[1]); after = json.loads(sys.argv[2])
+swap_growth = after.get("swap_mb", 0) - before.get("swap_mb", 0)
+bad = swap_growth > 2000 or after.get("free_pct", 100) < 3
+print(bad)
+PY
+}
+
 now_monotonic() { python3 -c 'import time; print(time.monotonic())'; }
 
 if [[ "$MODE" == "run" ]]; then
@@ -52,8 +65,9 @@ if [[ "$MODE" == "run" ]]; then
     MEM_BEFORE=$(memory_snapshot)
     RESULTS="{}"
     for t in $TASKS; do
-        SRCDIR="$TASKS_DIR/$t"
-        [[ -d "$SRCDIR" ]] || { echo "no such task dir: $SRCDIR"; continue; }
+        # resolve task id -> dir (t1 -> t1-suffix-automaton)
+        SRCDIR=$(ls -d "$TASKS_DIR/${t}-"* 2>/dev/null | head -1 || true)
+        [[ -n "$SRCDIR" && -d "$SRCDIR" ]] || { echo "no such task dir for id '$t'"; continue; }
         WORK="/tmp/proxy_${LABEL}_${t}"
         rm -rf "$WORK"; mkdir -p "$WORK"
         cp -R "$SRCDIR"/. "$WORK"/
@@ -122,13 +136,16 @@ if [[ "$MODE" == "compare" ]]; then
 import json, sys
 b = json.load(open(sys.argv[1])); c = json.load(open(sys.argv[2]))
 
-def degraded(m):
-    return m.get("free_pct", 0) < 20 or m.get("swap_mb", 0) > 8000
+def degraded(mb, ma):
+    # champion loaded: free% is normally 6-11%; degraded = swap grew >2GB
+    # during the run or free% in hard-OOM territory
+    growth = ma.get("swap_mb", 0) - mb.get("swap_mb", 0)
+    return growth > 2000 or ma.get("free_pct", 100) < 3
 
-bd = degraded(b["memory_before"]) or degraded(b["memory_after"])
-cd = degraded(c["memory_before"]) or degraded(c["memory_after"])
-print(f"baseline  {b['label']}: {b['date']}  degraded={bd}  swap={b['memory_before'].get('swap_mb')}MB free={b['memory_before'].get('free_pct')}%")
-print(f"candidate {c['label']}: {c['date']}  degraded={cd}  swap={c['memory_before'].get('swap_mb')}MB free={c['memory_before'].get('free_pct')}%")
+bd = degraded(b["memory_before"], b["memory_after"])
+cd = degraded(c["memory_before"], c["memory_after"])
+print(f"baseline  {b['label']}: {b['date']}  degraded={bd}  swap {b['memory_before'].get('swap_mb')}MB->{b['memory_after'].get('swap_mb')}MB free={b['memory_after'].get('free_pct')}%")
+print(f"candidate {c['label']}: {c['date']}  degraded={cd}  swap {c['memory_before'].get('swap_mb')}MB->{c['memory_after'].get('swap_mb')}MB free={c['memory_after'].get('free_pct')}%")
 
 print(f"{'task':5} {'base_s':>8} {'cand_s':>8} {'ratio':>7}  gates")
 ratios = []; ok = 0; total = 0
