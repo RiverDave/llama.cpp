@@ -56,3 +56,59 @@ batch 32, the fast mm GEMM above).
 ## Progress log
 
 - 2026-08-14: M0 done. E0 dispatched: baseline sweep running.
+- 2026-08-14 E0 RESULT: DISPATCH-ONLY IS DEAD. Threshold 32->2 routes
+  everything to the existing 64x32 mm kernel; measured REGRESSION at every
+  batch (throttle-noise-corrected, interleaved pairs recommended for E1):
+    baseline (mv<32 / mm@32): b=2 29.67, b=8 29.79, b=32 30.13 t/s decode
+    patched (mm everywhere):  b=1 24.92, b=2 24.38, b=4 25.84, b=8 24.88,
+    b=16 25.78, b=32 26.42
+  The 64x32 tile zero-pads below 32 tokens (~1/32 utilization at b=1).
+  Prefill also regressed at small batches (S_PP b=8: 61.6 -> 39.9).
+  REVERTED (ops.cpp restored to threshold 32, rebuilt).
+  NOTE: consecutive bench runs throttle (~10-15% drift, power governor) -
+  E1 A/Bs MUST be interleaved pairs, not sequential sweeps.
+  Bench gotcha: llama-batched-bench needs -npl explicitly (empty n_pl =
+  zero combos, header-only, exit 0).
+
+## E1 design (skinny-tile kernel_mul_mm_id, NR1=8) - the mission spec
+
+### Hypothesis
+A 64x8-tile variant of kernel_mul_mm_id instantiated for IQ3_S (plus
+Q4_0/Q8_0 as plumbing validation) beats the per-expert mul_mv_id path at
+decode batches 2..16 on M4/Metal, because the weight tile is amortized
+across 8 tokens instead of 1 (PR #25377 evidence on plain mul_mat:
+2.02x at bs=8, Q4_0).
+
+### Surgery plan
+1. COPY kernel_mul_mm_id (ggml-metal.metal:10452) as
+   kernel_mul_mm_id_nr8 with NR1: 32 -> 8:
+   - NR0=64, NR1=8, NK=32, NL0=NK/16=2, NL1=NK/8=4
+   - threadgroup = 1 simdgroup (64 threads); accumulators: 8x
+     simdgroup_float8x8 (64x8 tile)
+   - sb shmem shrinks to NR1*NK*sizeof(S1); sa stays NR0*NK*sizeof(S0)
+   - grid: tgpig.x = ceil(neh1/8), tgpig.y = ceil(ne0/64), tgpig.z = expert
+   - careful with lr0/lr1 clamping + id lookup (ids_i32[im*ne21 + r1 + lr1])
+2. Instantiate for block_iq3_s (QK_NL, dequantize_iq3_s) + block_q4_0 +
+   block_q8_0 (validation quants). Register host_name in the template
+   block; wire pipeline lookup in ggml-metal.m (mirror
+   ggml_metal_library_get_pipeline_mul_mm_id).
+3. Dispatch (ggml-metal-ops.cpp MUL_MAT_ID case): new branch
+   (ne21 >= 2 && ne21 <= 16 && quant in {iq3_s, q4_0, q8_0}) ->
+   nr8 pipeline; keep mv at ne21==1; keep existing mm at ne21>=32.
+4. Build, then INTERLEAVED A/B: baseline vs patched, llama-batched-bench
+   -b 2,4,8,16,32 pairs (order A B A B), -c 2048 -npp 32 -ntg 64 -npl 1.
+5. Logit verification: llama-eval-callback dump (same prompt, baseline vs
+   patched build) max-abs-diff < 1e-4. The mm path is already used in
+   prefill >= 32 tokens in production, so numerical parity is expected.
+6. If nr8 wins at 2..16: extend dispatch, then E2 (multi-slot server
+   aggregate: ne21 = active slots) and E3 (spec-verify batch -> single-
+   stream 1.2-1.4x via --spec-type draft-mtp).
+
+### Kill criteria (per variant)
+- Interleaved A/B shows < 5% gain at b=8 -> variant dead, try next
+  (NR1=4? 16? different NK? Q4_0-first validation).
+- Logit diff > 1e-4 -> correctness bug, revert variant.
+- Batch-1 decode regresses > 2% -> revert immediately (mv path must stay
+  for ne21=1; the nr8 branch is gated on ne21>=2 anyway).
+- 3 consecutive variants < 5% -> E1 dead, report PARTIAL, keep threshold
+  at 32 (current behavior is the safe state).
