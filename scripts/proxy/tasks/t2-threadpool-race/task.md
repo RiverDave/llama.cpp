@@ -21,6 +21,11 @@ same: sum of 1..1000 printed as `total=<n> expected=500500`.
 
 Do not modify `verify.sh`.
 
+Toolchain note: Homebrew's `clang++` TSAN runtime segfaults on macOS
+ARM64 (dyld `__guard_setup`). Use the system compiler for your own
+iteration: `/usr/bin/clang++ -std=c++20 -O1 -g -fsanitize=thread
+main.cpp -o /tmp/tp_test` (the gate already pins it).
+
 **Definition of done**: `./verify.sh` exits 0. Use the shell to compile and
-iterate (`clang++ -std=c++20 -O1 -g -fsanitize=thread main.cpp -o /tmp/tp_test`
-and run it yourself while developing).
+iterate (`/usr/bin/clang++ -std=c++20 -O1 -g -fsanitize=thread main.cpp
+-o /tmp/tp_test` and run it yourself while developing).
