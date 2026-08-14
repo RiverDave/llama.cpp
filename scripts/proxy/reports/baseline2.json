@@ -1,30 +1,30 @@
 {
-  "label": "baseline",
-  "date": "2026-08-14T10:23:24",
+  "label": "baseline2",
+  "date": "2026-08-14T10:37:10",
   "memory_before": {
-    "swap_mb": 9507,
+    "swap_mb": 11216,
     "free_pct": 7
   },
   "memory_after": {
-    "swap_mb": 10797,
+    "swap_mb": 12659,
     "free_pct": 7
   },
   "tasks": {
     "t1": {
       "gate": true,
-      "wall_s": 81.1,
+      "wall_s": 511.0,
       "pi_exit": 0,
       "timed_out": false
     },
     "t2": {
-      "gate": false,
-      "wall_s": 298.7,
+      "gate": true,
+      "wall_s": 50.6,
       "pi_exit": 0,
       "timed_out": false
     },
     "t3": {
       "gate": true,
-      "wall_s": 121.5,
+      "wall_s": 70.8,
       "pi_exit": 0,
       "timed_out": false
     }
