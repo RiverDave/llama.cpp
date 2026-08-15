@@ -80,13 +80,29 @@ across 8 tokens instead of 1 (PR #25377 evidence on plain mul_mat:
 2.02x at bs=8, Q4_0).
 
 ### Surgery plan
+0. **METHODOLOGY CORRECTION (Sol review 3, 2026-08-14):** llama-batched-bench
+   decode batch = npl, NOT -b. With -npl 1 every TG step is ne21=1; -b only
+   caps the logical batch. => ALL E0 numbers measured ne21=1 only (the
+   mm@b1 vs mv@b1 comparison; the 24.9-26.4 "regression" numbers are mm at
+   batch 1). Batches 2-16 are UNTESTED. Correct A/B: sweep -npl 2,4,8,16,32
+   (with -b >= npl, e.g. -b 64) and read S_TG.
 1. COPY kernel_mul_mm_id (ggml-metal.metal:10452) as
    kernel_mul_mm_id_nr8 with NR1: 32 -> 8:
    - NR0=64, NR1=8, NK=32, NL0=NK/16=2, NL1=NK/8=4
-   - threadgroup = 1 simdgroup (64 threads); accumulators: 8x
-     simdgroup_float8x8 (64x8 tile)
+   - **THREAD COUNT CORRECTION (Sol review 3):** 64 threads = TWO Metal
+     simdgroups (32 lanes), not one. For a 1-simdgroup NR1=8 kernel:
+     dispatch 32 threads, and REDESIGN the A-tile load mapping (the copied
+     lr0 = tiitg/NL0 with 64 threads + NL0=2 only covers rows 0..31, leaving
+     half of sa uninitialized -> silently wrong results). Use a looped load:
+     each thread strides over the 64x32 tile (e.g. 2 iterations of 16
+     threads x 32 cols), or keep 64 threads with a corrected mapping.
+   - accumulators: 8x simdgroup_float8x8 (64x8 tile)
    - sb shmem shrinks to NR1*NK*sizeof(S1); sa stays NR0*NK*sizeof(S0)
-   - grid: tgpig.x = ceil(neh1/8), tgpig.y = ceil(ne0/64), tgpig.z = expert
+   - **GRID CORRECTION (Sol review 3):** host grid must be UNIFORM over
+     experts: tgpig.x = (ne21 + 7)/8, tgpig.y = ceil(ne0/64), tgpig.z =
+     expert; per-expert early-out via r1 >= neh1 (as the existing kernel
+     does). neh1 is device-side (htpe) - the CPU cannot size x per expert
+     without an indirect-dispatch redesign.
    - careful with lr0/lr1 clamping + id lookup (ids_i32[im*ne21 + r1 + lr1])
 2. Instantiate for block_iq3_s (QK_NL, dequantize_iq3_s) + block_q4_0 +
    block_q8_0 (validation quants). Register host_name in the template
